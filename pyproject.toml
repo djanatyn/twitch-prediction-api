@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "twitch-prediction-api-example"
+version = "0.1.0"
+description = "Example code for Twitch's Prediction APIs"
+authors = ["Jonathan Strickland <djanatyn@gmail.com>"]
+license = "Unlicense"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+flask = "^2.0.1"
+requests = "^2.25.1"
+
+[tool.poetry.dev-dependencies]
+ipython = "^7.24.1"
+pytype = "^2019.5.25"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
