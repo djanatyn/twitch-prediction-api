@@ -9,7 +9,9 @@ Implemented using flask.
 # usage
 
 First, create a [Twitch application](https://https://dev.twitch.tv/console/apps).
-Set the OAuth redirect URL to: `http://localhost:8000/oauth2/subscribe`
+
+Set the OAuth redirect URL to: `http://localhost:8000/oauth2/subscribe`.
+
 Create a new client secret.
 
 Start the server:
