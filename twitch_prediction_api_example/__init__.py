@@ -23,6 +23,11 @@ class Config(object):
 
 
 def authUrl(config: Config) -> str:
+    """
+    Construct authentication URL for OAuth client credentials flow.
+
+    See: https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#oauth-client-credentials-flow
+    """
     return "&".join(
         [
             f"https://id.twitch.tv/oauth2/authorize?client_id={config.clientID}",
