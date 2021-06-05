@@ -3,30 +3,55 @@
 version = "0.1.0"
 
 import os
+import sys
+import requests
+from dataclasses import dataclass
+from typing import Optional
 from flask import Flask, request
 
 
-class Config(object):
+@dataclass
+class Config:
     clientID: str
     clientSecret: str
+    clientUsername: str
 
-    def __init__(self) -> None:
-        if (clientID := os.environ.get("EXAMPLE_CLIENT_ID")) is None:
-            print("couldn't load EXAMPLE_CLIENT_ID")
-            exit(1)
-        elif (clientSecret := os.environ.get("EXAMPLE_CLIENT_SECRET")) is None:
-            print("couldn't load EXAMPLE_CLIENT_SECRET")
-            exit(1)
 
-        self.clientID = clientID
-        self.clientSecret = clientSecret
+def loadConfig(app: Flask) -> Optional[Config]:
+    """
+    Construct Config from environment variables
+
+    You should define:
+    - EXAMPLE_CLIENT_ID
+    - EXAMPLE_CLIENT_SECRET
+    - EXAMPLE_CLIENT_USERNAME
+    """
+    if clientID := os.environ.get("EXAMPLE_CLIENT_ID") is None:
+        app.logger.fatal("couldn't load EXAMPLE_CLIENT_ID")
+    elif secret := os.environ.get("EXAMPLE_CLIENT_SECRET") is None:
+        app.logger.fatal("couldn't load EXAMPLE_CLIENT_SECRET")
+    elif username := os.environ.get("EXAMPLE_CLIENT_USERNAME") is None:
+        app.logger.fatal("couldn't load EXAMPLE_CLIENT_USERNAME")
+    else:
+        config = Config(clientID=clientID, clientSecret=secret, clientUsername=username)
+        loginPrompt = f"""
+        Visit this url to authorize your Twitch Application to subscribe to your Twitch Account:
+
+        {authUrl(config)}
+
+        (Do not share this URL with others!)
+        """
+        app.logger.warning(loginPrompt)
+        return config
+
+    return None
 
 
 def authUrl(config: Config) -> str:
     """
     Construct authentication URL for OAuth client credentials flow.
 
-    See: https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#oauth-client-credentials-flow
+    https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#oauth-client-credentials-flow
     """
     return "&".join(
         [
@@ -40,34 +65,43 @@ def authUrl(config: Config) -> str:
     )
 
 
-config = Config()
-urlWarning = f"""
-Visit this url to authorize your Twitch Application to subscribe to your Twitch Account:
+def lookupUsername(config: Config, username: str):
+    """
+    Look up UserID given a username.
 
-{authUrl(config)}
+    https://dev.twitch.tv/docs/api/reference#get-users
+    """
+    url = "https://api.twitch.tv/helix/users"
+    payload = {"login": username}
+    return requests.get(url, params=payload)
 
-(Do not share this URL with others!)
-"""
+
+def createSubscription(
+    config: Config, subType: str, userID: str, callbackURL: str, secret: str, token: str
+):
+    """
+    Create subscription using EventSub API.
+
+    https://dev.twitch.tv/docs/eventsub
+    """
+    url = "https://api.twitch.tv/helix/eventsub/subscriptions"
+    payload = {
+        "type": subType,
+        "version": "1",
+        "condition": {"broadcaster_user_id": userID},
+        "transport": {"method": "webhook", "callback": callbackURL, "secret": secret},
+    }
+    return requests.post(url, json=payload)
+
 
 app = Flask(__name__)
-app.logger.warning(urlWarning)
+app.debug = True
+if config := loadConfig(app) is None:
+    sys.exit(1)
+else:
 
-
-@app.route("/oauth2/subscribe")
-def subscribe():
-    app.logger.warning("creating subscription")
-    # TODO: submit request to create subscription
-    # https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types#channelpredictionbegin
-    # {
-    #     "type": "channel.prediction.begin",
-    #     "version": "1",
-    #     "condition": {
-    #         "broadcaster_user_id": "1337"
-    #     },
-    #     "transport": {
-    #         "method": "webhook",
-    #         "callback": "https://example.com/webhooks/callback",
-    #         "secret": "s3cRe7"
-    #     }
-    # }
-    pass
+    @app.route("/oauth2/subscribe")
+    def subscribe():
+        app.logger.warning("creating subscription")
+        code = request.args.get("code")
+        return "received code"
