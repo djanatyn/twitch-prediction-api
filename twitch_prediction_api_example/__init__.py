@@ -22,11 +22,24 @@ class Config(object):
         self.clientSecret = clientSecret
 
 
+def authUrl(config: Config) -> str:
+    return "&".join(
+        [
+            f"https://id.twitch.tv/oauth2/authorize?client_id={config.clientID}",
+            f"client_secret={config.clientSecret}",
+            "redirect_uri=http://localhost:8080/oauth2/subscribe",
+            "grant_type=client_credentials",
+            "response_type=code",
+            "scopes=channel:read:predictions",
+        ]
+    )
+
+
 config = Config()
 urlWarning = f"""
 Visit this url to authorize your Twitch Application to subscribe to your Twitch Account:
 
-https://id.twitch.tv/oauth2/authorize?client_id={config.clientID}&client_secret={config.clientSecret}&redirect_uri=http://localhost:8080/oauth2/subscribe&grant_type=client_credentials&response_type=code&scopes=channel:read:predictions
+{authUrl(config)}
 
 (Do not share this URL with others!)
 """
