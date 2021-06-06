@@ -65,14 +65,14 @@ def authUrl(config: Config) -> str:
     )
 
 
-def lookupUsername(config: Config, token: str, username: str) -> requests.Response:
+def lookupUsername(config: Config, token: str) -> requests.Response:
     """
     Look up UserID given a username.
 
     https://dev.twitch.tv/docs/api/reference#get-users
     """
     url = "https://api.twitch.tv/helix/users"
-    payload = {"login": username}
+    payload = {"login": config.username}
     headers = {"Authorization": f"Bearer {token}", "Client-Id": config.clientID}
     return requests.get(url, params=payload, headers=headers)
 
@@ -140,7 +140,7 @@ else:
         tokenResponse = requestAccessToken(config, code)
         app.logger.warning(token := tokenResponse.json().get("access_token"))
 
-        usernameResponse = lookupUsername(config, token, "djanatyn_")
+        usernameResponse = lookupUsername(config, token)
         app.logger.warning(usernameResponse.json())
 
         #     request = SubscriptionRequest(
