@@ -14,6 +14,7 @@ from flask import Flask, request
 class Config:
     clientID: str
     clientSecret: str
+    callbackURL: str
     username: str
 
 
@@ -25,6 +26,7 @@ def loadConfig(app: Flask) -> Optional[Config]:
     - EXAMPLE_CLIENT_ID
     - EXAMPLE_CLIENT_SECRET
     - EXAMPLE_CLIENT_USERNAME
+    - EXAMPLE_CALLBACK_URL
     """
     if (clientID := os.environ.get("EXAMPLE_CLIENT_ID")) is None:
         app.logger.fatal("couldn't load EXAMPLE_CLIENT_ID")
@@ -32,12 +34,19 @@ def loadConfig(app: Flask) -> Optional[Config]:
         app.logger.fatal("couldn't load EXAMPLE_CLIENT_SECRET")
     elif (username := os.environ.get("EXAMPLE_CLIENT_USERNAME")) is None:
         app.logger.fatal("couldn't load EXAMPLE_CLIENT_USERNAME")
+    elif (callbackURL := os.environ.get("EXAMPLE_CALLBACK_URL")) is None:
+        app.logger.fatal("couldn't load EXAMPLE_CALLBACK_URL")
     else:
-        config = Config(clientID, clientSecret, username)
+        config = Config(
+            clientID=clientID,
+            clientSecret=clientSecret,
+            callbackURL=callbackURL,
+            username=username,
+        )
         loginPrompt = "\n\n".join(
             [
                 "Visit this url to authorize your Twitch Application to subscribe to your Twitch Account:",
-                authUrl(config),
+                authCodeFlowUrl(config),
                 "(Do not share this URL with others!)",
             ]
         )
@@ -47,7 +56,7 @@ def loadConfig(app: Flask) -> Optional[Config]:
     return None
 
 
-def authUrl(config: Config) -> str:
+def authCodeFlowUrl(config: Config) -> str:
     """
     Construct authentication URL for OAuth authorization code flow.
 
@@ -104,17 +113,23 @@ class SubscriptionRequest:
     userID: str
     callbackURL: str
     secret: str
+    token: str
 
 
-def requestSubscription(config: Config, sub: SubscriptionRequest, token: str):
+def requestSubscription(config: Config, sub: SubscriptionRequest):
     """
     Create subscription using EventSub API.
 
     https://dev.twitch.tv/docs/eventsub
     """
     url = "https://api.twitch.tv/helix/eventsub/subscriptions"
+    headers = {
+        "Authorization": f"Bearer {sub.token}",
+        "Client-ID": config.clientID,
+        "Content-Type": "application/json",
+    }
     payload = {
-        "type": sub.subType,
+        "type": sub.subtype,
         "version": "1",
         "condition": {"broadcaster_user_id": sub.userID},
         "transport": {
@@ -123,7 +138,18 @@ def requestSubscription(config: Config, sub: SubscriptionRequest, token: str):
             "secret": sub.secret,
         },
     }
-    return requests.post(url, json=payload)
+    return requests.post(url, json=payload, headers=headers)
+
+
+def oauthClientCredentials(config: Config) -> requests.Response:
+    url = "https://id.twitch.tv/oauth2/token"
+    payload = {
+        "client_id": config.clientID,
+        "client_secret": config.clientSecret,
+        "grant_type": "client_credentials",
+        "scope": "channel:read:predictions user:read:email",
+    }
+    return requests.post(url, params=payload)
 
 
 app = Flask(__name__)
@@ -135,19 +161,35 @@ else:
 
     @app.route("/oauth2/subscribe")
     def subscribe():
+        # oauth authorization code flow
         app.logger.warning("retrieving access token")
         code = request.args.get("code")
+        # get access token with authorization code
         tokenResponse = requestAccessToken(config, code)
-        app.logger.warning(token := tokenResponse.json().get("access_token"))
+        assert tokenResponse.status_code == 200
+        app.logger.warning(userAccessToken := tokenResponse.json().get("access_token"))
 
-        usernameResponse = lookupUsername(config, token)
-        app.logger.warning(usernameResponse.json())
+        # look up userID with access token
+        usernameResponse = lookupUsername(config, userAccessToken)
+        assert usernameResponse.status_code == 200
+        app.logger.warning(userID := usernameResponse.json()["data"][0]["id"])
 
-        #     request = SubscriptionRequest(
-        #         subtype="channel.prediction.begin",
-        #         userID=
-        #         callbackURL="http://localhost:8080/subscribe"
-        # secret: str
-        #     )
-        #     createSubscription(config, SubscriptionRequest())
-        return "received code"
+        # request oauth client credential token
+        clientCredsRepsonse = oauthClientCredentials(config)
+        assert clientCredsRepsonse.status_code == 200
+        app.logger.warning(
+            clientCredToken := clientCredsRepsonse.json().get("access_token")
+        )
+
+        subRequest = SubscriptionRequest(
+            subtype="channel.prediction.begin",
+            userID=userID,
+            callbackURL=config.callbackURL,
+            secret="changemechangeme",
+            token=clientCredToken,
+        )
+        app.logger.info(subRequest)
+        response = requestSubscription(config, subRequest)
+        app.logger.warning(response.json())
+
+        return "requested subscription!"
