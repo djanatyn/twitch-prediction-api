@@ -20,7 +20,7 @@ class Config:
 
 def loadConfig(app: Flask) -> Optional[Config]:
     """
-    Construct Config from environment variables
+    Construct Config from environment variables.
 
     You should define:
     - EXAMPLE_CLIENT_ID
@@ -88,7 +88,9 @@ def lookupUsername(config: Config, token: str) -> requests.Response:
 
 def requestAccessToken(config: Config, code: str) -> requests.Response:
     """
-    Use code to retrieve access token in OAuth authorization code flow.
+    Use code to retrieve user access token in OAuth authorization code flow.
+
+    Used for requesting user information.
 
     https://dev.twitch.tv/docs/eventsub
     """
@@ -99,6 +101,22 @@ def requestAccessToken(config: Config, code: str) -> requests.Response:
         "code": code,
         "grant_type": "authorization_code",
         "redirect_uri": "http://localhost:8080/oauth2/subscribe",
+    }
+    return requests.post(url, params=payload)
+
+
+def oauthClientCredentials(config: Config) -> requests.Response:
+    """
+    Use Config to request OAuth Client Credentials token.
+
+    Used for requesting subscriptions.
+    """
+    url = "https://id.twitch.tv/oauth2/token"
+    payload = {
+        "client_id": config.clientID,
+        "client_secret": config.clientSecret,
+        "grant_type": "client_credentials",
+        "scope": "channel:read:predictions user:read:email",
     }
     return requests.post(url, params=payload)
 
@@ -141,17 +159,6 @@ def requestSubscription(config: Config, sub: SubscriptionRequest):
     return requests.post(url, json=payload, headers=headers)
 
 
-def oauthClientCredentials(config: Config) -> requests.Response:
-    url = "https://id.twitch.tv/oauth2/token"
-    payload = {
-        "client_id": config.clientID,
-        "client_secret": config.clientSecret,
-        "grant_type": "client_credentials",
-        "scope": "channel:read:predictions user:read:email",
-    }
-    return requests.post(url, params=payload)
-
-
 app = Flask(__name__)
 app.debug = True
 
@@ -164,6 +171,7 @@ else:
         # oauth authorization code flow
         app.logger.warning("retrieving access token")
         code = request.args.get("code")
+
         # get access token with authorization code
         tokenResponse = requestAccessToken(config, code)
         assert tokenResponse.status_code == 200
@@ -181,6 +189,7 @@ else:
             clientCredToken := clientCredsRepsonse.json().get("access_token")
         )
 
+        # request subscription
         subRequest = SubscriptionRequest(
             subtype="channel.prediction.begin",
             userID=userID,
@@ -193,3 +202,9 @@ else:
         app.logger.warning(response.json())
 
         return "requested subscription!"
+
+    @app.route("/callbacks/eventsub", methods=["POST"])
+    def eventsub():
+        app.logger.info("eventsub request")
+        app.logger.warning(request.json)
+        return request.json.get("challenge")
