@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 version = "0.1.0"
 
 import os
@@ -14,7 +15,7 @@ from flask import Flask, request
 class Config:
     clientID: str
     clientSecret: str
-    callbackURL: str
+    callbackBaseURL: str
     username: str
 
 
@@ -34,13 +35,13 @@ def loadConfig(app: Flask) -> Optional[Config]:
         app.logger.fatal("couldn't load EXAMPLE_CLIENT_SECRET")
     elif (username := os.environ.get("EXAMPLE_CLIENT_USERNAME")) is None:
         app.logger.fatal("couldn't load EXAMPLE_CLIENT_USERNAME")
-    elif (callbackURL := os.environ.get("EXAMPLE_CALLBACK_URL")) is None:
-        app.logger.fatal("couldn't load EXAMPLE_CALLBACK_URL")
+    elif (callbackBaseURL := os.environ.get("EXAMPLE_CALLBACK_BASE_URL")) is None:
+        app.logger.fatal("couldn't load EXAMPLE_CALLBACK_BASE_URL")
     else:
         config = Config(
             clientID=clientID,
             clientSecret=clientSecret,
-            callbackURL=callbackURL,
+            callbackBaseURL=callbackBaseURL,
             username=username,
         )
         loginPrompt = "\n\n".join(
@@ -66,7 +67,7 @@ def authCodeFlowUrl(config: Config) -> str:
         [
             f"https://id.twitch.tv/oauth2/authorize?client_id={config.clientID}",
             f"client_secret={config.clientSecret}",
-            "redirect_uri=http://localhost:8080/oauth2/subscribe",
+            f"redirect_uri={config.callbackBaseURL}/oauth2/subscribe",
             "grant_type=client_credentials",
             "response_type=code",
             "scope=channel:read:predictions%20user:read:email",
@@ -129,7 +130,6 @@ class SubscriptionRequest:
 
     subtype: str
     userID: str
-    callbackURL: str
     secret: str
     token: str
 
@@ -152,7 +152,7 @@ def requestSubscription(config: Config, sub: SubscriptionRequest):
         "condition": {"broadcaster_user_id": sub.userID},
         "transport": {
             "method": "webhook",
-            "callback": sub.callbackURL,
+            "callback": f"{config.callbackBaseURL}/callbacks/eventsub",
             "secret": sub.secret,
         },
     }
@@ -166,7 +166,7 @@ if (config := loadConfig(app)) is None:
     sys.exit(1)
 else:
 
-    @app.route("/oauth2/subscribe")
+    @app.route("/oauth2/subscribe", methods=["GET", "POST"])
     def subscribe():
         # oauth authorization code flow
         app.logger.warning("retrieving access token")
@@ -193,7 +193,6 @@ else:
         subRequest = SubscriptionRequest(
             subtype="channel.prediction.begin",
             userID=userID,
-            callbackURL=config.callbackURL,
             secret="changemechangeme",
             token=clientCredToken,
         )
