@@ -206,4 +206,8 @@ else:
     def eventsub():
         app.logger.info("eventsub request")
         app.logger.warning(request.json)
-        return request.json.get("challenge")
+
+        app.logger.warning(challenge := request.json.get("challenge"))
+        assert challenge is not None
+
+        return request.json.get(challenge)
