@@ -83,7 +83,7 @@ def loadConfig(app: Flask) -> Optional[Config]:
         loginPrompt = "\n\n".join(
             [
                 "Visit this url to authorize your Twitch Application to subscribe to your Twitch Account:",
-                authCodeFlowUrl(config),
+                authCodeFlowUrl(config.callbackBaseURL, config.creds.clientID),
             ]
         )
         app.logger.warning(loginPrompt)
@@ -92,16 +92,19 @@ def loadConfig(app: Flask) -> Optional[Config]:
     return None
 
 
-def authCodeFlowUrl(config: Config) -> str:
+def authCodeFlowUrl(callbackBaseURL: str, clientID: str) -> str:
     """
     Construct authentication URL for OAuth authorization code flow.
+
+    Send this to the user you want to subscribe to. They'll give permission to
+    authorize your Twitch application.
 
     https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#oauth-authorization-code-flow
     """
     return "&".join(
         [
-            f"https://id.twitch.tv/oauth2/authorize?client_id={config.creds.clientID}",
-            f"redirect_uri={config.callbackBaseURL}/oauth2/subscribe",
+            f"https://id.twitch.tv/oauth2/authorize?client_id={clientID}",
+            f"redirect_uri={callbackBaseURL}/oauth2/subscribe",
             "response_type=code",
             "scope=channel:read:predictions%20user:read:email",
         ]
@@ -113,7 +116,7 @@ def authCodeFlowUrl(config: Config) -> str:
 #     """
 
 
-def lookupUsername(config: Config, token: str) -> requests.Response:
+def lookupUsername(username: str, token: str) -> requests.Response:
     """
     Look up UserID given a username (from Config).
     Uses user access token.
@@ -121,7 +124,7 @@ def lookupUsername(config: Config, token: str) -> requests.Response:
     https://dev.twitch.tv/docs/api/reference#get-users
     """
     url = "https://api.twitch.tv/helix/users"
-    payload = {"login": config.username}
+    payload = {"login": username}
     headers = {"Authorization": f"Bearer {token}", "Client-Id": config.creds.clientID}
     return requests.get(url, params=payload, headers=headers)
 
@@ -178,7 +181,7 @@ class SubscriptionRequest:
     token: str
 
 
-def requestSubscription(config: Config, sub: SubscriptionRequest):
+def requestSubscription(clientID: str, callbackBaseURL: str, sub: SubscriptionRequest):
     """
     Create subscription using EventSub API.
 
@@ -187,7 +190,7 @@ def requestSubscription(config: Config, sub: SubscriptionRequest):
     url = "https://api.twitch.tv/helix/eventsub/subscriptions"
     headers = {
         "Authorization": f"Bearer {sub.token}",
-        "Client-ID": config.creds.clientID,
+        "Client-ID": clientID,
         "Content-Type": "application/json",
     }
     payload = {
@@ -196,7 +199,7 @@ def requestSubscription(config: Config, sub: SubscriptionRequest):
         "condition": {"broadcaster_user_id": sub.userID},
         "transport": {
             "method": "webhook",
-            "callback": f"{config.callbackBaseURL}/callbacks/eventsub",
+            "callback": f"{callbackBaseURL}/callbacks/eventsub",
             "secret": sub.secret,
         },
     }
@@ -229,7 +232,7 @@ else:
         app.logger.warning(userAccessToken := tokenResponse.json().get("access_token"))
 
         # look up userID with access token
-        usernameResponse = lookupUsername(config, userAccessToken)
+        usernameResponse = lookupUsername(config.username, userAccessToken)
         assert usernameResponse.status_code == 200
         app.logger.warning(userID := usernameResponse.json()["data"][0]["id"])
 
@@ -248,7 +251,9 @@ else:
             token=clientCredToken,
         )
         app.logger.info(subRequest)
-        response = requestSubscription(config, subRequest)
+        response = requestSubscription(
+            config.creds.clientID, config.callbackBaseURL, subRequest
+        )
         app.logger.warning(response.json())
 
         return "requested subscription!"
